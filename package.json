@@ -1,0 +1,24 @@
+{
+  "name": "cse-405",
+  "version": "1.0.0",
+  "description": "Simple number guessing game for two players",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DehNutCase/CSE-405.git"
+  },
+  "author": "Ken Lin",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DehNutCase/CSE-405/issues"
+  },
+  "homepage": "https://github.com/DehNutCase/CSE-405#readme",
+  "dependencies": {
+    "express": "^4.17.1",
+    "socket.io": "^2.3.0"
+  }
+}
