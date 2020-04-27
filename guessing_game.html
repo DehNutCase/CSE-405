@@ -78,7 +78,8 @@
 "use strict";
 var player_1 = {name:"Player 1", state: 'input', points: 0, lies: 1, current_number : -1, current_question: 'None'};
 var player_2 = {name:"Player 2", state: 'None', points: 0, lies: 1, current_number : -1, current_question: 'None'};
-var game_state = {round:1, reply:1}
+var game_state = {round:1, reply:1, player:player_1, other_player:player_2}
+//be careful about things that involve other_player, server will probably need to handle it
 var JSON_game_state = JSON.stringify(game_state);
 var JSON_1 = JSON.stringify(player_1);
 var JSON_2 = JSON.stringify(player_2);
@@ -93,7 +94,7 @@ function update_stats(){
   document.getElementById("stats_1").innerHTML = JSON_1;
   document.getElementById("stats_2").innerHTML = JSON_2;
   document.getElementById("stats_3").innerHTML = JSON_game_state;
-  
+  document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
 }
 
 update_stats();
@@ -103,94 +104,84 @@ function number_button(button_input){
 //the 9 buttons with numbers on it are used to take number inputs, for selecting a number at the start of round, asking questions about the other player's number
 //and guessing the number at the end of a round
 
-  switch(player_1.state){
-    //this case is disabled because it's currently single player mode
-    //case 'reply': 
-      //document.getElementById("display").innerHTML = 'You have already chosen your number for the round.';
-      //break;
-    
-    //player 1 temporarily plays for player 2 as well, this will be moved to player 2's side once the game is 2 player
-    case 'reply':
-      if (player_2.state == 'questioning'){
-        player_2.current_number = button_input;
-        document.getElementById("display").innerHTML = "Player two's currently thinking about number " + button_input;
-      }
-      break;
-    
+  switch(game_state.player.state){
     //player one chooses his number for the round (the number player 2 has to guess)    
     case 'input':
-      document.getElementById("display").innerHTML = "Player one has chosen " + button_input + " for his number.";
-      player_1.current_number = button_input;
-      player_1.state = 'reply';
-      player_2.state = 'questioning';
+      document.getElementById("display").innerHTML = "You have chosen" + button_input + " for your number.";
+      game_state.player.current_number = button_input;
+      game_state.player.state = 'reply';
+      other_player.state = 'questioning';
       document.getElementById("directions").innerHTML = "Now, player 2 chooses a number and a comparison to ask player 1 a question."
       break;
-    
-    //player 1 guessing player 2's number
-  /*  case 'guess':
+      
+    //In the 'reply' state player 1 is only choosing whether to tell or truth or lie during his response
+    case 'reply': 
+      document.getElementById("display").innerHTML = 'You have already chosen your number for the round.';
       break;
-  */
-      //because this is 1 player, player 1 guesses for player 2 right now, this isn't useful at the moment
-      case 'guess':
-        break;
+    
+    //In the questioning state the player needs to choose a number and also a comparison to ask about that number
+    //This is in order to ask about the number the other player has chosen
+    case 'questioning':
+      game_state.player.current_number = button_input;
+      document.getElementById("display").innerHTML = "You're thinking about number " + button_input;
+      break;
+
+      //Once all the questions have been asked for the round, the player will need to guess the number the other player had chosen at the start of the round
+    case 'guess':
+      game_state.player.current_number = button_input;
+      if(game_state.player.current_number == other_player.current_number){
+        game_state.player.points += 1;
+        document.getElementById("display").innerHTML = "Correct!";
+        } else {
+          document.getElementById("display").innerHTML = "Sorry, wrong.";
+        }
+      end_round(game_state.player, game_state.other_player); //once the round ends, the players need to swap places in terms of who chooses a number and who guesses the number
+      break;
   }
-  
-  //this shouldn't be here
-  if (player_2.state == "guessing"){
-    player_2.current_number = button_input;
-    if (player_2.current_number == player_1.current_number){
-      player_2.points += 1;
-      document.getElementById("display").innerHTML = "Correct!";
-    } else {
-      document.getElementById("display").innerHTML = "Sorry, wrong.";
-    }
-    end_round(player_1);
-  }
-  
   update_stats();
 }
 
-//currently this will freeze the game after a single round, as two player mode needs
-//to wait for two web pages being connected
-//Incidentally, this adds a lie to the player who was given as input
-function end_round(player){
-  player_2.state = "input";
-  player_1.state = "questioning";
-  player_1.current_number = -1;
-  player_2.current_number = -1;
-  player.lies += 1; //
+//at the end of a round the players needs to switch positions, the score needs to be tallied
+//the number of replies in the current round reset to 1, and an additional lie allotted
+//to the player who chose a number
+function end_round(guesser, selector){
+  guesser.state = "input";
+  guesser.current_number = -1;
+  
+  selector.state = "questioning"; //should be in a waiting state, but this shouldn't change much
+  selector.current_number = -1;
+  selector.lies += 1;
+  
   game_state.round += 1;
   game_state.reply = 1;
+  document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
 }
 
 
 function comparison_button(button_input){
-  switch(player_1.state){
-    //this case temporarily disabled because it's single player mode
-  /*case 'questioning':
-      if (player_1.state != 'asked_question'){
-        player_1.current_question = button_input;
-        if (player_1.current_number != -1) ask_question();
-      }     
-      break;
-  */
-    //temporarily enabled because it's single player mode
-    case 'reply':
-      if (player_2.state == 'questioning') { 
-        player_2.current_question = button_input;
-        if (player_2.current_number != -1) ask_question();
-      }
+  //at this moment the comparison button is only used when asking a question
+  //so it might be more useful to use an if/else here, with the else
+  //branch telling the player that the button isn't useful at the moment
+  switch(game_state.player.state){
+    case 'questioning':
+      //if the player is asking a question and already selected a number
+      //we ask the question to the other player
+      game_state.player.current_question = button_input;
+      if (game_state.player.current_number != -1) ask_question();
       break;
   }
   update_stats();
 }
 
 function ask_question(){
-  player_2.state = 'asked_question';
+  //function to ask the other player a question about his number
+  //will need work to let it work across different browser windows
+  
+  game_state.player.state = 'asked_question'; //change state so you don't get to ask multiple questions at once
   document.getElementById("directions").innerHTML = "Now, player 1 chooses a response to player 2's question."
   
   var comparison;
-  switch(player_2.current_question){
+  switch(game_state.player.current_question){
     case 'LT':
       comparison = 'less than '
       break;
@@ -212,12 +203,13 @@ function ask_question(){
       break;
   }
   
-  document.getElementById("display").innerHTML = "Is your number " + comparison + player_2.current_number + "?";
-  document.getElementById(reply_helper()).innerHTML = "Is your number " + comparison + player_2.current_number + "?";
+  document.getElementById("display").innerHTML = "Is your number " + comparison + game_state.player.current_number + "?";
+  document.getElementById(reply_helper()).innerHTML = "Is your number " + comparison + game_state.player.current_number + "?";
   
 }
 
 function reply_helper(){
+  //helper function to make it easier to put the questions for the current round where they belong
   switch(game_state.reply){
     case 1: 
       return "first_reply";
@@ -238,34 +230,36 @@ function reply_helper(){
 }
 
 function reply_button(button_input){
-  if(player_2.state == 'asked_question'){
+  //reply button is only useful after the other player asked a question
+  //it's used to decide whether to tell the truth in reponse or to lie
+  if(game_state.other_player.state == 'asked_question'){
       var response;
-      switch(player_2.current_question){
+      switch(game_state.other_player.current_question){
         case 'LT':
-          response = player_1.current_number < player_2.current_number;
+          response = game_state.player.current_number < game_state.other_player.current_number;
           break;
           
         case 'LE':
-          response = player_1.current_number <= player_2.current_number;
+          response = game_state.player.current_number <= game_state.other_player.current_number;
           break;
           
         case 'E':
-          response = player_1.current_number == player_2.current_number;
+          response = game_state.player.current_number == game_state.other_player.current_number;
           break;
           
         case 'GE':
-          response = player_1.current_number >= player_2.current_number;
+          response = game_state.player.current_number >= game_state.other_player.current_number;
           break;
           
         case 'GT':
-          response = player_1.current_number > player_2.current_number;
+          response = game_state.player.current_number > game_state.other_player.current_number;
           break;
       }
       
     if (button_input == 'F'){
-      if (player_1.lies > 0) {
-        player_1.lies -= 1;
-        document.getElementById("lie_button").innerHTML = 'Lie(' + player_1.lies + ')';
+      if (game_state.player.lies > 0) {
+        game_state.player.lies -= 1;
+        document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
         response = !response
         document.getElementById(reply_helper()).innerHTML = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
       } else {
@@ -278,7 +272,7 @@ function reply_button(button_input){
       document.getElementById(reply_helper()).innerHTML = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
     }
     
-  next_question(player_2);
+  next_question(game_state.other_player);
   }
   update_stats();
 }
