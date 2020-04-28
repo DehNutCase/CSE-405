@@ -7,3 +7,5 @@ who chose the number has a 'lie counter' which is incremented by one every time 
 number can lie once per round, but is allowed to save his lies for later rounds.
 
 Wins are primarily determined by number of rounds, then number of lies remaining. Otherwise it's a tie.
+
+Uses ngrok and node to host the html.
