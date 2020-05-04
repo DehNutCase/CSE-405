@@ -9,3 +9,5 @@ number can lie once per round, but is allowed to save his lies for later rounds.
 Wins are primarily determined by number of rounds, then number of lies remaining. Otherwise it's a tie.
 
 Uses ngrok and node to host the html.
+
+Typing "node server.js" in the command line will host the webpage, at which point you can access it by going to localhost:8000 in your browser.

@@ -1,19 +1,22 @@
-let http = require('http');
+const app = require("express")();
+let http = require('http').Server(app);
 let fs = require('fs');
- 
-let handleRequest = (request, response) => {
-    response.writeHead(200, {
-        'Content-Type': 'text/html'
+const io = require("socket.io")(http);
+const port = 8000;
+  app.get("/", function(req, res) {
+        res.sendFile(__dirname + "/guessing_game.html");
     });
-    fs.readFile('./guessing_game.html', null, function (error, data) {
-        if (error) {
-            response.writeHead(404);
-            respone.write('Whoops! File not found!');
-        } else {
-            response.write(data);
-        }
-        response.end();
+
+io.on("connection", function(socket) {
+    socket.on("update_status", function(data) {
+        socket.broadcast.emit("update_status", data);
     });
-};
+    
+    socket.on("message", function(data) {
+        socket.broadcast.emit("message", data);
+    });
+});
  
-http.createServer(handleRequest).listen(8000);
+http.listen(port, function() {
+      console.log("Listening on *:" + port);
+  });

@@ -1,2 +1,4 @@
+//refer to package.json for node's modules
 node_modules/
+//ngrok is a third party software for exposing local servers to the internet
 ngrok.exe/

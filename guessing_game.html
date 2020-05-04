@@ -18,11 +18,13 @@
   width: 75%;
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.2.0/socket.io.dev.js"></script>
 <body>
 
 <title>Number Guessing Game</title>
 
 <header>Here are the directions:<p id = "directions">First, player 1 chooses a number.</p></header>
+<button onclick="transmit_gamestate()">Send Gamestate</button>
 
 <div class = "row">
 <div class = "column left">
@@ -84,6 +86,8 @@ var JSON_game_state = JSON.stringify(game_state);
 var JSON_1 = JSON.stringify(player_1);
 var JSON_2 = JSON.stringify(player_2);
 
+var socket = io();
+
 
 function update_stats(){
 //In the 2 player version this would be used to send information to/from the server, right now it just displays the stats on the screen
@@ -96,9 +100,64 @@ function update_stats(){
   document.getElementById("stats_3").innerHTML = JSON_game_state;
   document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
 }
-
 update_stats();
 
+function transmit_gamestate(){
+  //transmits the game state to other player when you update_status
+  //we'll need to be careful to only call this in functions that actually update the status
+  //otherwise proper changes will be overwritten
+  //we'll need to carefully modify the switch functions to do this
+  update_stats()
+  socket.emit("update_status", {
+      message: JSON_game_state
+  });
+}
+
+function receive_gamestate(data){
+  //receives the gamestate and updates the current state
+  game_state = JSON.parse(data.message);
+  
+  //copying everything about the state except the players name from the message
+  
+  //var temp_name = player_1.name;
+  player_1 = game_state.other_player;
+  //player_1.name = temp_name;
+  player_2 = game_state.player;
+  game_state.player = player_1;
+  game_state.other_player = player_2;
+  
+  update_stats();
+  const li = document.createElement("li");
+  li.innerHTML = "Hello There";
+}
+
+socket.on("update_status", function(data) {
+  receive_gamestate(data);
+});
+
+function transmit_message(location, text){
+  //since the game's now two player, this function combined with
+  //receive_message and the socket for message
+  //allows us to display things like directions and questions
+  //on the other player's screen
+  var to_send = JSON.stringify({location, text});
+  socket.emit("message", {
+      message: to_send
+  });
+}
+
+function receive_message(location, text){
+  //refer to transmit_message
+  //allows us to display things like
+  //updated directions in response to
+  //the other player's move
+  document.getElementById(location).innerHTML = text;
+}
+
+socket.on("message", function(data) {
+  var processed_data = JSON.parse(data.message);
+  receive_message(processed_data.location, processed_data.text);
+});
 
 function number_button(button_input){
 //the 9 buttons with numbers on it are used to take number inputs, for selecting a number at the start of round, asking questions about the other player's number
@@ -107,16 +166,18 @@ function number_button(button_input){
   switch(game_state.player.state){
     //player one chooses his number for the round (the number player 2 has to guess)    
     case 'input':
-      document.getElementById("display").innerHTML = "You have chosen" + button_input + " for your number.";
+      document.getElementById("display").innerHTML = "You have chosen " + button_input + " for your number.";
       game_state.player.current_number = button_input;
       game_state.player.state = 'reply';
-      other_player.state = 'questioning';
+      game_state.other_player.state = 'questioning';
       document.getElementById("directions").innerHTML = "Now, player 2 chooses a number and a comparison to ask player 1 a question."
+      transmit_message("directions", "Now, player 2 chooses a number and a comparison to ask player 1 a question.");
+      transmit_gamestate();
       break;
       
     //In the 'reply' state player 1 is only choosing whether to tell or truth or lie during his response
     case 'reply': 
-      document.getElementById("display").innerHTML = 'You have already chosen your number for the round.';
+      document.getElementById("display").innerHTML = 'You have already chosen your number for the round. (' + game_state.player.current_number + ')';
       break;
     
     //In the questioning state the player needs to choose a number and also a comparison to ask about that number
@@ -129,13 +190,16 @@ function number_button(button_input){
       //Once all the questions have been asked for the round, the player will need to guess the number the other player had chosen at the start of the round
     case 'guess':
       game_state.player.current_number = button_input;
-      if(game_state.player.current_number == other_player.current_number){
+      if(game_state.player.current_number == game_state.other_player.current_number){
         game_state.player.points += 1;
         document.getElementById("display").innerHTML = "Correct!";
+        transmit_message("display", "The other player guessed " + game_state.player.current_number + ", which was correct.");
         } else {
           document.getElementById("display").innerHTML = "Sorry, wrong.";
+          transmit_message("display", "The other player guessed " + game_state.player.current_number + ", which was wrong.");
         }
       end_round(game_state.player, game_state.other_player); //once the round ends, the players need to swap places in terms of who chooses a number and who guesses the number
+      transmit_gamestate();
       break;
   }
   update_stats();
@@ -179,6 +243,8 @@ function ask_question(){
   
   game_state.player.state = 'asked_question'; //change state so you don't get to ask multiple questions at once
   document.getElementById("directions").innerHTML = "Now, player 1 chooses a response to player 2's question."
+  transmit_message("directions", "Now, player 1 chooses a response to player 2's question.");
+
   
   var comparison;
   switch(game_state.player.current_question){
@@ -205,7 +271,8 @@ function ask_question(){
   
   document.getElementById("display").innerHTML = "Is your number " + comparison + game_state.player.current_number + "?";
   document.getElementById(reply_helper()).innerHTML = "Is your number " + comparison + game_state.player.current_number + "?";
-  
+  transmit_message(reply_helper(), "Is your number " + comparison + game_state.player.current_number + "?");
+  transmit_gamestate();
 }
 
 function reply_helper(){
@@ -260,19 +327,25 @@ function reply_button(button_input){
       if (game_state.player.lies > 0) {
         game_state.player.lies -= 1;
         document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
-        response = !response
-        document.getElementById(reply_helper()).innerHTML = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
+        response = !response;
+        var temp_text = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
+        document.getElementById(reply_helper()).innerHTML = temp_text;
+        transmit_message(reply_helper(), temp_text);
       } else {
         document.getElementById("display").innerHTML = 'You do not have lies left.';
-        document.getElementById(reply_helper()).innerHTML = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
+        var temp_text = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
+        document.getElementById(reply_helper()).innerHTML = temp_text;
+        transmit_message(reply_helper(), temp_text);
       }
     }
 
     if (button_input == 'T'){
-      document.getElementById(reply_helper()).innerHTML = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
+      var temp_text = "Q: " + document.getElementById(reply_helper()).innerHTML + "\n A:" + response;
+      document.getElementById(reply_helper()).innerHTML = temp_text;
+      transmit_message(reply_helper(), temp_text);
     }
-    
   next_question(game_state.other_player);
+  transmit_gamestate();
   }
   update_stats();
 }
@@ -283,9 +356,11 @@ function next_question(player){
   player.current_question = "None";
   game_state.reply += 1;
   document.getElementById("directions").innerHTML = "Player 2 now once again chooses a number and a comparison to ask a question. 4 Questions total."
+  transmit_message("directions", "Player 2 now once again chooses a number and a comparison to ask a question. 4 Questions total.");
   if (game_state.reply == 5){
     document.getElementById("directions").innerHTML = "Player 2 now needs to guess player 1's number.";
-    player.state = "guessing";
+    transmit_message("directions", "Player 2 now needs to guess player 1's number.");
+    player.state = "guess";
   }
 }
 
