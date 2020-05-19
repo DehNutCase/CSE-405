@@ -19,11 +19,14 @@
 }
 </style>
 <head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.2.0/socket.io.dev.js"></script>
+
 <script src="https://www.gstatic.com/firebasejs/7.14.4/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/7.14.4/firebase-firestore.js"></script>
 <script src="https://www.gstatic.com/firebasejs/7.14.4/firebase-auth.js"></script>
 <script src="https://cdn.firebase.com/libs/firebaseui/3.5.2/firebaseui.js"></script>
 <link type="text/css" rel="stylesheet" href="https://cdn.firebase.com/libs/firebaseui/3.5.2/firebaseui.css" />
+
 </head>
 
 <body>
@@ -32,10 +35,8 @@
 <div id="firebaseui-auth-container" style="display: none;"></div>
 
 <div id="game_div" style="display: none;">
-<header>Here are the directions:<p id = "directions">First, player 1 chooses a number. (The player who chooses a number first will be player 1.)</p></header>
-<button onclick="delete_game('1')">Delete Data Button</button>
-<button onclick="display_game_data()">Prompt game data button</button>
-<button onclick="join_game()">Join or host a game</button>
+<header>Here are the directions:<p id = "directions">First, player 1 chooses a number.</p></header>
+
 
 
 <div class = "row">
@@ -99,6 +100,8 @@ var JSON_game_state = JSON.stringify(game_state);
 var JSON_1 = JSON.stringify(player_1);
 var JSON_2 = JSON.stringify(player_2);
 
+var socket = io();
+
 var firebaseConfig = {
   apiKey: "AIzaSyABc-hSu1_lz4xPeEBjYRR05sswL9qB8ZY",
   authDomain: "guessing-game-51dd3.firebaseapp.com",
@@ -133,10 +136,6 @@ var uiConfig = {
     firebase.auth.EmailAuthProvider.PROVIDER_ID
   ],
 };
-
-var game_id;
-var firestore_gamestate;
-var messages;
 
 firebase.auth().onAuthStateChanged(function(user) {
   if (user) {
@@ -174,75 +173,33 @@ var db = firebase.firestore();
 function get_game_id(){
   //prompt user for a game id, attempting to join a game if they gave an ID that's already in use
   //otherwise host the game using that id
-  game_id = prompt("Please enter a game_id. (If you're hosting, you'll need to select an unused ID. If you're joining a game, you need to enter the game_id the other player gave you.)", Math.floor(Math.random() * 50000).toString());
-  var docRef = db.collection("games").doc(game_id);
+  var id = prompt("Please enter a game_id. (If you're hosting, you'll need to select an unused ID. If you're joining a game, you need to enter the game_id the other player gave you.)", Math.floor(Math.random() * 50000).toString());
+  var docRef = db.collection("games").doc(id);
   
   docRef.get().then(function(doc) {
     if (doc.exists) {
         //double check that the user wants to join the game, then joins the game if they answer 'Y'
-        var join_game = prompt("The game id you entered is already being used. Do you want to join this game? (Input: Y or N)", "N");
+        var join_game = prompt("The game_id you entered is already being used. Do you want to join this game? (Input: Y or N)", "N")
         if (join_game != 'Y' && join_game != 'N'){
-          prompt("Please answer 'Y' to join the game or 'N' to not join. (Input: Y or N)", "N");
+          prompt("Please answer 'Y' to join the game or 'N' to not join. (Input: Y or N)", "N")
         }
-        if (join_game == 'Y'){
+        if join_game == 'Y'{
           //code to join the game here
         }
         else{
           //we need to get a new game_id, since this one didn't work. We can just call get_game_id recursively and assume
           //the user is polite enough not to recurse deep enough to mess up the server (A dangerous assumption)
-          get_game_id();
-          return;
+          get_game_id()
+          return
         }
         
     } else {
         //Host game code here
-        docRef.set(game_state);
-        //we've now made a game called game_state
-        return;
+        
     }
   }).catch(function(error) {
     console.log("Error getting document:", error);
   });
-}
-
-function delete_game(document_name){
-  var document = db.collection("games").doc(document_name);
-  document.delete().then(function() {
-    console.log("Document successfully deleted!");
-  }).catch(function(error) {
-    console.error("Error removing document: ", error);
-  });
-  
-  var message_doc = db.collection("messages").doc(document_name);
-  message_doc.delete().then(function() {
-    console.log("Document successfully deleted!");
-  }).catch(function(error) {
-    console.error("Error removing document: ", error);
-  });
-}
-
-
-function join_game(){
-  get_game_id();
-  firestore_gamestate = db.collection("games").doc(game_id);
-  messages = db.collection("messages").doc(game_id);
-  
-  firestore_gamestate.onSnapshot(function(doc){
-    var source = doc.metadata.hasPendingWrites ? "Local" : "Server";
-    if (source == "Server"){
-      if (doc.exists) {
-        receive_gamestate(doc.data());
-      }
-    }
-  });
-  
-  messages.onSnapshot(function(doc) {
-    if (doc.exists){
-      receive_message(doc.data().location, doc.data().text);
-    }
-  });
-  
-  update_stats;
 }
 
 
@@ -251,27 +208,15 @@ function transmit_gamestate(){
   //we'll need to be careful to only call this in functions that actually update the status
   //otherwise proper changes will be overwritten
   //we'll need to carefully modify the switch functions to do this
-  update_stats();
-  firestore_gamestate.set(game_state);
-}
-
-function display_game_data(){
-  //testing function to see if we can retrieve game_state from firestore
-  firestore_gamestate.get().then(function(doc) {
-    if (doc.exists) {
-        prompt(JSON.stringify(doc.data()));
-    } else {
-        // doc.data() will be undefined in this case
-        console.log("No such document!");
-    }
-  }).catch(function(error) {
-    console.log("Error getting document:", error);
+  update_stats()
+  socket.emit("update_status", {
+      message: JSON_game_state
   });
 }
 
 function receive_gamestate(data){
   //receives the gamestate and updates the current state
-  game_state = data;
+  game_state = JSON.parse(data.message);
   
   //copying everything about the state except the players name from the message
   
@@ -283,17 +228,23 @@ function receive_gamestate(data){
   game_state.other_player = player_2;
   
   update_stats();
+  const li = document.createElement("li");
+  li.innerHTML = "Hello There";
 }
 
-//every time data is updated in firestore, recieve the gamestate and update client side
-
+socket.on("update_status", function(data) {
+  receive_gamestate(data);
+});
 
 function transmit_message(location, text){
   //since the game's now two player, this function combined with
   //receive_message and the socket for message
   //allows us to display things like directions and questions
   //on the other player's screen
-  messages.set({location, text});
+  var to_send = JSON.stringify({location, text});
+  socket.emit("message", {
+      message: to_send
+  });
 }
 
 function receive_message(location, text){
@@ -303,6 +254,11 @@ function receive_message(location, text){
   //the other player's move
   document.getElementById(location).innerHTML = text;
 }
+
+socket.on("message", function(data) {
+  var processed_data = JSON.parse(data.message);
+  receive_message(processed_data.location, processed_data.text);
+});
 
 function number_button(button_input){
 //the 9 buttons with numbers on it are used to take number inputs, for selecting a number at the start of round, asking questions about the other player's number
