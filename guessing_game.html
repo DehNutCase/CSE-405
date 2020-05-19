@@ -227,6 +227,7 @@ function join_game(){
   firestore_gamestate = db.collection("games").doc(game_id);
   messages = db.collection("messages").doc(game_id);
   
+  //every time data is updated in firestore, recieve the gamestate and update client side
   firestore_gamestate.onSnapshot(function(doc){
     var source = doc.metadata.hasPendingWrites ? "Local" : "Server";
     if (source == "Server"){
@@ -236,13 +237,14 @@ function join_game(){
     }
   });
   
+  //every time the message is updated in firestore, recieve it and print it to the screen
   messages.onSnapshot(function(doc) {
     if (doc.exists){
       receive_message(doc.data().location, doc.data().text);
     }
   });
   
-  update_stats;
+  update_stats();
 }
 
 
@@ -285,7 +287,6 @@ function receive_gamestate(data){
   update_stats();
 }
 
-//every time data is updated in firestore, recieve the gamestate and update client side
 
 
 function transmit_message(location, text){
