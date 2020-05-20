@@ -186,6 +186,9 @@ function get_game_id(){
         }
         if (join_game == 'Y'){
           //code to join the game here
+          //We don't actually have to do anything
+          //The game_id is already updated
+          return;
         }
         else{
           //we need to get a new game_id, since this one didn't work. We can just call get_game_id recursively and assume
