@@ -32,10 +32,10 @@
 <div id="firebaseui-auth-container" style="display: none;"></div>
 
 <div id="game_div" style="display: none;">
-<header>Here are the directions:<p id = "directions">First, player 1 chooses a number. (The player who chooses a number first will be player 1.)</p></header>
-<button onclick="delete_game('1')">Delete Data Button</button>
-<button onclick="display_game_data()">Prompt game data button</button>
-<button onclick="join_game()">Join or host a game</button>
+<header>Here are the directions:<p id = "directions">First, Player 1 chooses a number. (The player who hosts the game will be Player 1.)</p></header>
+<button id ="round_button" onclick="set_max_rounds()">Set Rounds(3)</button>
+<button id ="join_button" onclick="join_game()">Join or host a game</button>
+<button onclick="delete_game(game_id)">Delete Data Button (Click after game's finished)</button>
 
 
 <div class = "row">
@@ -74,10 +74,11 @@
 </p>
 </div>
 
-<div class = "column right"><p></p>Stats:
+<div class = "column right"><p id = "stats">Stats:
 <p id = "stats_1"></p>
 <p id = "stats_2"></p>
 <p id = "stats_3"></p>
+</p>
 </aside>
 
 <aside id = "replies">Replies:
@@ -93,7 +94,7 @@
 "use strict";
 var player_1 = {name:"Player 1", state: 'input', points: 0, lies: 1, current_number : -1, current_question: 'None'};
 var player_2 = {name:"Player 2", state: 'None', points: 0, lies: 1, current_number : -1, current_question: 'None'};
-var game_state = {round:1, reply:1, player:player_1, other_player:player_2}
+var game_state = {round:1, reply:1, player:player_1, other_player:player_2, max_rounds:6}
 //be careful about things that involve other_player, server will probably need to handle it
 var JSON_game_state = JSON.stringify(game_state);
 var JSON_1 = JSON.stringify(player_1);
@@ -150,21 +151,32 @@ firebase.auth().onAuthStateChanged(function(user) {
     // ...
   }
 });
+//shows the login prompt only after everything else is loaded and ready, causes issues otherwise
 document.getElementById("firebaseui-auth-container").style.display = 'block';
 
 
 
 
 function update_stats(){
-//In the 2 player version this would be used to send information to/from the server, right now it just displays the stats on the screen
-//The stats are for debugging
+//mostly for debugging, except the last line, which updates the number of lies available
+//also updates the number of rounds to play
+//the first lines show the game_state on the screen, so they'll need to be hidden later
   JSON_1 = JSON.stringify(player_1);
   JSON_2 = JSON.stringify(player_2);
   JSON_game_state = JSON.stringify(game_state);
+  /*
   document.getElementById("stats_1").innerHTML = JSON_1;
   document.getElementById("stats_2").innerHTML = JSON_2;
   document.getElementById("stats_3").innerHTML = JSON_game_state;
+  */
+  //above is debugging code, turned off because app is almost ready
+  
+  document.getElementById("stats_1").innerHTML = "You have: " + game_state.player.points + " points";
+  document.getElementById("stats_2").innerHTML = "The other player has: " + game_state.other_player.points + " points";
+  
   document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
+  document.getElementById("round_button").innerHTML = 'Set Rounds(' + game_state.max_rounds/2 + ')';
+  document.getElementById("join_button").innerHTML = 'Join or host a game(' + game_id + ')';
 }
 update_stats();
 
@@ -208,7 +220,13 @@ function get_game_id(){
   });
 }
 
+
 function delete_game(document_name){
+  //deletes the current game, a bit dangerous to give both players access to this
+  //we're assuming good faith on the part of the players to only use
+  //this button when they no longer want to play the game
+  //unfortunately the player(s) will need to reload the website to start a new game
+  //we can consider adding a restart game button later
   var document = db.collection("games").doc(document_name);
   document.delete().then(function() {
     console.log("Document successfully deleted!");
@@ -226,6 +244,7 @@ function delete_game(document_name){
 
 
 function join_game(){
+  //updates the game_id to the correct game id, then either join or host a game
   get_game_id();
   firestore_gamestate = db.collection("games").doc(game_id);
   messages = db.collection("messages").doc(game_id);
@@ -242,8 +261,11 @@ function join_game(){
   
   //every time the message is updated in firestore, recieve it and print it to the screen
   messages.onSnapshot(function(doc) {
-    if (doc.exists){
-      receive_message(doc.data().location, doc.data().text);
+    var source = doc.metadata.hasPendingWrites ? "Local" : "Server";
+    if (source == "Server"){
+      if (doc.exists){
+        receive_message(doc.data().location, doc.data().text);
+      }
     }
   });
   
@@ -258,20 +280,6 @@ function transmit_gamestate(){
   //we'll need to carefully modify the switch functions to do this
   update_stats();
   firestore_gamestate.set(game_state);
-}
-
-function display_game_data(){
-  //testing function to see if we can retrieve game_state from firestore
-  firestore_gamestate.get().then(function(doc) {
-    if (doc.exists) {
-        prompt(JSON.stringify(doc.data()));
-    } else {
-        // doc.data() will be undefined in this case
-        console.log("No such document!");
-    }
-  }).catch(function(error) {
-    console.log("Error getting document:", error);
-  });
 }
 
 function receive_gamestate(data){
@@ -308,6 +316,17 @@ function receive_message(location, text){
   document.getElementById(location).innerHTML = text;
 }
 
+function set_max_rounds(){
+  //sets the number of rounds to play
+  //multiply the number of rounds by 2 internally, because it's 2 player
+  var rounds = prompt("How many rounds to play?", "3");
+  while (!parseInt(rounds, 10)|| parseInt(rounds, 10) < 1){
+    rounds = prompt("How many rounds to play? (Please enter an positive integer, or at least a number.)", "3");
+  }
+  game_state.max_rounds = parseInt(rounds, 10) * 2;
+  update_stats();
+}
+
 function number_button(button_input){
 //the 9 buttons with numbers on it are used to take number inputs, for selecting a number at the start of round, asking questions about the other player's number
 //and guessing the number at the end of a round
@@ -319,8 +338,9 @@ function number_button(button_input){
       game_state.player.current_number = button_input;
       game_state.player.state = 'reply';
       game_state.other_player.state = 'questioning';
-      document.getElementById("directions").innerHTML = "Now, player 2 chooses a number and a comparison to ask player 1 a question."
-      transmit_message("directions", "Now, player 2 chooses a number and a comparison to ask player 1 a question.");
+      //it might be more efficient to save the message to be sent as a variable rather than computing it for both sending the message and directions displayed on the screen
+      document.getElementById("directions").innerHTML = "Now, " + game_state.other_player.name + " chooses a number and a comparison to ask " + game_state.player.name + " a question."
+      transmit_message("directions", "Now, " + game_state.other_player.name + " chooses a number and a comparison to ask " + game_state.player.name + " a question.");
       transmit_gamestate();
       break;
       
@@ -344,9 +364,11 @@ function number_button(button_input){
         document.getElementById("display").innerHTML = "Correct!";
         transmit_message("display", "The other player guessed " + game_state.player.current_number + ", which was correct.");
         } else {
-          document.getElementById("display").innerHTML = "Sorry, wrong.";
+          document.getElementById("display").innerHTML = "Sorry, wrong. The correct answer was: " + game_state.other_player.current_number;
           transmit_message("display", "The other player guessed " + game_state.player.current_number + ", which was wrong.");
         }
+      document.getElementById("directions").innerHTML = "Now, " + game_state.player.name + " needs to choose a number for " + game_state.other_player.name + " to guess."
+      transmit_message("directions", "Now, " + game_state.player.name + " needs to choose a number for " + game_state.other_player.name + " to guess.");
       end_round(game_state.player, game_state.other_player); //once the round ends, the players need to swap places in terms of who chooses a number and who guesses the number
       transmit_gamestate();
       break;
@@ -354,20 +376,59 @@ function number_button(button_input){
   update_stats();
 }
 
-//at the end of a round the players needs to switch positions, the score needs to be tallied
-//the number of replies in the current round reset to 1, and an additional lie allotted
-//to the player who chose a number
+
 function end_round(guesser, selector){
+  //at the end of a round the players needs to switch positions, the score needs to be tallied
+  //the number of replies in the current round reset to 1, and an additional lie allotted
+  //to the player who chose a number
+  //we also need to clear the replies section for a new round of replies
   guesser.state = "input";
   guesser.current_number = -1;
   
   selector.state = "questioning"; //should be in a waiting state, but this shouldn't change much
   selector.current_number = -1;
-  selector.lies += 1;
+  selector.lies += 1; //This will cause each player to end up with at least 1 lie at the end of the game
   
   game_state.round += 1;
   game_state.reply = 1;
   document.getElementById("lie_button").innerHTML = 'Lie(' + game_state.player.lies + ')';
+  
+  document.getElementById("first_reply").innerHTML = ""; //clearing replies
+  transmit_message("first_reply", ""); //clearing the other player's replies
+  document.getElementById("second_reply").innerHTML = "";
+  transmit_message("second_reply", "");
+  document.getElementById("third_reply").innerHTML = "";
+  transmit_message("third_reply", "");
+  document.getElementById("fourth_reply").innerHTML = "";
+  transmit_message("fourth_reply", "");
+  
+  if (game_state.round > game_state.max_rounds){
+    //maximum number of rounds played, time to calculate score and display a winner
+    if (player_1.points > player_2. points){
+      //player 1 won
+      document.getElementById("directions").innerHTML = "With a score of " + player_1.points + " points " + player_1.name + " has won! \n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)";
+      transmit_message("directions", "With a score of " + player_1.points + " points " + player_1.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)");
+    } else if (player_2.points > player_1.points){
+      //player 2 won
+      document.getElementById("directions").innerHTML = "With a score of " + player_2.points + " points " + player_2.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)";
+      transmit_message("directions", "With a score of " + player_2.points + " points " + player_2.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)");
+    } else {
+      //points are tied, now we use number of lies remaining to tie-break 
+      if (player_1.lies > player_2.lies){
+        //player 1 won
+        document.getElementById("directions").innerHTML = "The scores were tied, but with more lies remaining " + player_1.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)";
+        transmit_message("directions", "The scores were tied, but with more lies remaining " + player_1.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)");     
+      } else if (player_2.lies > player_1.lies){
+        //player 2 won
+        document.getElementById("directions").innerHTML = "The scores were tied, but with more lies remaining " + player_2.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)";
+        transmit_message("directions", "The scores were tied, but with more lies remaining " + player_2.name + " has won!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)"); 
+      } else {
+        //a tie because score and lies are both equal
+        document.getElementById("directions").innerHTML = "Both score and lies remaing are the same for both players, it's a tie!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)";
+        transmit_message("directions", "Both score and lies remaing are the same for both players, it's a tie!\n\nPlease refresh the page if you wish to play another game. (And please delete the game data before you leave.)"); 
+      }
+    }
+  }
 }
 
 
@@ -391,8 +452,8 @@ function ask_question(){
   //will need work to let it work across different browser windows
   
   game_state.player.state = 'asked_question'; //change state so you don't get to ask multiple questions at once
-  document.getElementById("directions").innerHTML = "Now, player 1 chooses a response to player 2's question."
-  transmit_message("directions", "Now, player 1 chooses a response to player 2's question.");
+  document.getElementById("directions").innerHTML = "Now, " + game_state.other_player.name + " chooses a response to " + game_state.player.name + "'s question."
+  transmit_message("directions", "Now, " + game_state.other_player.name + " chooses a response to " + game_state.player.name + "'s question.");
 
   
   var comparison;
@@ -493,23 +554,24 @@ function reply_button(button_input){
       document.getElementById(reply_helper()).innerHTML = temp_text;
       transmit_message(reply_helper(), temp_text);
     }
-  next_question(game_state.other_player);
+  next_question(game_state.player, game_state.other_player);
   transmit_gamestate();
   }
   update_stats();
 }
 
-function next_question(player){
-  player.state = "questioning";
-  player.current_number = -1;
-  player.current_question = "None";
+function next_question(player, other_player){
+  //hackish job to make sure the right player's name is printed when asking the next question
+  other_player.state = "questioning";
+  other_player.current_number = -1;
+  other_player.current_question = "None";
   game_state.reply += 1;
-  document.getElementById("directions").innerHTML = "Player 2 now once again chooses a number and a comparison to ask a question. 4 Questions total."
-  transmit_message("directions", "Player 2 now once again chooses a number and a comparison to ask a question. 4 Questions total.");
+  document.getElementById("directions").innerHTML = other_player.name + " now once again chooses a number and a comparison to ask a question. 4 Questions total."
+  transmit_message("directions", other_player.name + " now once again chooses a number and a comparison to ask a question. 4 Questions total.");
   if (game_state.reply == 5){
-    document.getElementById("directions").innerHTML = "Player 2 now needs to guess player 1's number.";
-    transmit_message("directions", "Player 2 now needs to guess player 1's number.");
-    player.state = "guess";
+    document.getElementById("directions").innerHTML = other_player.name + " now needs to guess " + player.name + "'s number.";
+    transmit_message("directions", other_player.name + " now needs to guess " + player.name + "'s number.");
+    other_player.state = "guess";
   }
 }
 
